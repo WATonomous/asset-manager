@@ -68,11 +68,10 @@ def clone_repos(repo_config, workspace_dir):
 def get_raw_watcloud_uris(repo_path: Path):
     repo = Repo(repo_path)
 
-    # -h suppresses filename output
     # --only-matching returns only the matched text
     try:
         out = repo.git.execute(
-            ["git", "grep", "--only-matching", "-h", "watcloud://[^\"' ]*"]
+            ["git", "grep", "--only-matching", "watcloud://[^\"' ]*"]
             + [r.name for r in repo.refs]
         )
     except GitCommandError as e:
@@ -83,7 +82,23 @@ def get_raw_watcloud_uris(repo_path: Path):
         else:
             raise
 
-    uris = set(u.strip() for u in out.splitlines() if u.strip())
+    # Each line has the format: ref:filename:watcloud://...
+    # We extract the ref and URI from each line.
+    uris = {}
+    for line in out.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Find "watcloud://" in the line to split ref:filename from the URI
+        uri_start = line.find("watcloud://")
+        if uri_start == -1:
+            continue
+        uri = line[uri_start:]
+        # Everything before the URI is "ref:filename:", so strip the trailing ":"
+        prefix = line[:uri_start].rstrip(":")
+        # The ref is everything up to the first ":"
+        ref = prefix.split(":")[0] if prefix else ""
+        uris.setdefault(uri, set()).add(ref)
 
     return uris
 
@@ -92,9 +107,11 @@ def get_raw_watcloud_uris(repo_path: Path):
 def get_watcloud_uris(repo_path: Path):
     raw_uris = get_raw_watcloud_uris(repo_path)
 
-    for uri in raw_uris:
+    for uri, refs in raw_uris.items():
         try:
-            yield WATcloudURI(uri)
+            parsed = WATcloudURI(uri)
+            parsed.refs = refs
+            yield parsed
         except ValueError as e:
             logging.debug(f"Skipping invalid WATcloud URI '{uri}': {e}")
 

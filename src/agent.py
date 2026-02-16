@@ -113,14 +113,23 @@ class Agent:
         repos = list(clone_repos(self.repo_config, self.workspace_dir))
 
         logging.info(f"Extracting WATcloud URIs from {len(repos)} repo(s)")
+
+        def get_uris_with_repo(repo):
+            for uri in get_watcloud_uris(repo.working_dir):
+                uri.repo = repo.working_dir
+                yield uri
+
         watcloud_uris = list(
             # sorting to ensure consistent order for testing
-            sorted(flatten([get_watcloud_uris(repo.working_dir) for repo in repos]))
+            sorted(flatten([get_uris_with_repo(repo) for repo in repos]))
         )
 
         logging.info(f"Found {len(watcloud_uris)} WATcloud URIs:")
         for uri in watcloud_uris:
-            logging.info(uri)
+            refs = sorted(uri.refs) if hasattr(uri, "refs") and uri.refs else []
+            refs_str = ", ".join(refs) if refs else "unknown"
+            repo_str = getattr(uri, "repo", "unknown")
+            logging.info(f"{uri} (repo: {repo_str}, refs: {refs_str})")
 
         desired_perm_objects = set(uri.sha256 for uri in watcloud_uris)
 
